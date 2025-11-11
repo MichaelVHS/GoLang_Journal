@@ -7,117 +7,147 @@ import (
 	"sort"
 )
 
-func SaveToFile(students map[int]string, journal map[int][]int) {
-	jsonData, err := json.MarshalIndent(students, "", "  ")
+type Student struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Marks []int  `json:"marks"`
+}
+
+type Journal struct {
+	Students []Student `json:"students"`
+}
+
+func (j *Journal) SaveToFile(filename string) {
+	data, err := json.MarshalIndent(j, "", "  ")
 	if err != nil {
 		fmt.Println("Ошибка сериализации:", err)
 		return
 	}
-
-	err = os.WriteFile("students.json", jsonData, 0644)
-	if err != nil {
-		fmt.Println("Ошибка записи файла:", err)
-	}
-
-	jsonData, err = json.MarshalIndent(journal, "", "  ")
-	if err != nil {
-		fmt.Println("Ошибка сериализации:", err)
-		return
-	}
-
-	err = os.WriteFile("journal.json", jsonData, 0644)
+	err = os.WriteFile(filename, data, 0644)
 	if err != nil {
 		fmt.Println("Ошибка записи файла:", err)
 	}
 }
 
-func LoadFromFile() (map[int]string, map[int][]int, error) {
-	if _, err := os.Stat("students.json"); os.IsNotExist(err) {
-		return nil, nil, fmt.Errorf("файл %s не существует", "students.json")
+func LoadFromFile(filename string) (*Journal, error) {
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		return nil, fmt.Errorf("файл %s не существует", filename)
 	}
-
-	data, err := os.ReadFile("students.json")
+	data, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ошибка чтения файла: %w", err)
+		return nil, fmt.Errorf("ошибка чтения файла: %w", err)
 	}
-
-	students := map[int]string{}
-	err = json.Unmarshal(data, &students)
-
-	if _, err := os.Stat("journal.json"); os.IsNotExist(err) {
-		return nil, nil, fmt.Errorf("файл %s не существует", "journal.json")
-	}
-
-	data, err = os.ReadFile("journal.json")
+	var j Journal
+	err = json.Unmarshal(data, &j)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ошибка чтения файла: %w", err)
+		return nil, fmt.Errorf("ошибка десериализации: %w", err)
 	}
-
-	journal := map[int][]int{}
-	err = json.Unmarshal(data, &journal)
-
-	return students, journal, nil
+	return &j, nil
 }
 
-func fileExists(filename string) bool {
-	_, err := os.Stat(filename)
-	return !os.IsNotExist(err)
+func (j *Journal) findStudentIndex(id int) int {
+	for i, s := range j.Students {
+		if s.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func (j *Journal) findStudentIndexByName(name string) int {
+	for i, s := range j.Students {
+		if s.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func (j *Journal) addStudent(name string) {
+	if j.findStudentIndexByName(name) != -1 {
+		fmt.Println("Ученик уже существует")
+		return
+	}
+	newID := 1
+	if len(j.Students) > 0 {
+		maxID := j.Students[0].ID
+		for _, s := range j.Students {
+			if s.ID > maxID {
+				maxID = s.ID
+			}
+		}
+		newID = maxID + 1
+	}
+	j.Students = append(j.Students, Student{
+		ID:    newID,
+		Name:  name,
+		Marks: []int{},
+	})
+	fmt.Println("Ученик добавлен")
+}
+
+func (j *Journal) removeStudent(id int) bool {
+	idx := j.findStudentIndex(id)
+	if idx == -1 {
+		return false
+	}
+	j.Students = append(j.Students[:idx], j.Students[idx+1:]...)
+	return true
+}
+
+func (j *Journal) addMark(id, mark int) bool {
+	idx := j.findStudentIndex(id)
+	if idx == -1 {
+		return false
+	}
+	if mark < 1 || mark > 5 {
+		fmt.Println("Оценка должна быть от 1 до 5")
+		return false
+	}
+	j.Students[idx].Marks = append(j.Students[idx].Marks, mark)
+	return true
+}
+
+func (j *Journal) averageMark(id int) (float64, bool) {
+	idx := j.findStudentIndex(id)
+	if idx == -1 || len(j.Students[idx].Marks) == 0 {
+		return 0, false
+	}
+	sum := 0
+	for _, m := range j.Students[idx].Marks {
+		sum += m
+	}
+	return float64(sum) / float64(len(j.Students[idx].Marks)), true
+}
+
+func (j *Journal) printStudents() {
+	if len(j.Students) == 0 {
+		fmt.Println("Учеников нет")
+		return
+	}
+	sort.Slice(j.Students, func(i, k int) bool {
+		return j.Students[i].ID < j.Students[k].ID
+	})
+	for _, s := range j.Students {
+		fmt.Printf("%d. %s\n", s.ID, s.Name)
+	}
 }
 
 func getName() string {
-	var name, surname, otches string
-	_, err := fmt.Scan(&name, &surname, &otches)
+	var name, surname, patronymic string
+	_, err := fmt.Scan(&name, &surname, &patronymic)
 	if err != nil {
 		fmt.Println("Ошибка ввода:", err)
 		return ""
 	}
-	fullName := name + " " + surname + " " + otches
-	return fullName
-}
-
-func SortKeys(Map map[int]string) []int {
-	keys := make([]int, 0, len(Map))
-	for id := range Map {
-		keys = append(keys, id)
-	}
-	sort.Ints(keys)
-	return keys
-}
-
-func printStud(students map[int]string) {
-	keys := SortKeys(students)
-	for _, id := range keys {
-		fmt.Printf("%d. %s\n", id, students[id])
-	}
-}
-
-func findKeyByValue(data map[int]string, value string) int {
-	for key, val := range data {
-		if val == value {
-			return key
-		}
-	}
-	return 0
-}
-
-func averMark(students map[int]string, journal map[int][]int, name string) float64 {
-	index := findKeyByValue(students, name)
-	var itog int
-	var aver float64
-	for _, val := range journal[index] {
-		itog += val
-	}
-	aver = float64(itog) / float64(len(journal[index]))
-	return aver
+	return name + " " + surname + " " + patronymic
 }
 
 func main() {
-	var err error
-	var check, mark int
-	var name string
-	var marks []int
-	var students map[int]string = map[int]string{}
-	var journal map[int][]int = map[int][]int{}
+	var journal Journal
+	var check int
+	var subCheck int
+	filename := "journal.json"
 	fmt.Println("Добро пожаловать в журнал")
 	for {
 		fmt.Println(`
@@ -127,173 +157,120 @@ func main() {
 3. Ввести оценку
 4. Вывести средний балл
 5. Сохранить в файл
-6. Получить из файла
-7.Выход`)
+6. Загрузить из файла
+7. Выход`)
 		fmt.Scan(&check)
-		if check < 1 || check > 9 {
-			fmt.Println("Такого действия не существует")
-			continue
-		} else if check == 1 {
+		switch check {
+		case 1:
 			fmt.Print("Введите ФИО: ")
-			name = getName()
-			if len(students) == 0 {
-				index := 1
-				students[index] = name
-				fmt.Println("Ученик добавлен")
+			name := getName()
+			if name != "" {
+				journal.addStudent(name)
+			}
+		case 2:
+			journal.printStudents()
+			if len(journal.Students) == 0 {
+				continue
+			}
+			fmt.Print("Выберите ID ученика для удаления: ")
+			var id int
+			fmt.Scan(&id)
+			if journal.removeStudent(id) {
+				fmt.Println("Ученик удален")
 			} else {
-				isStud := false
-				for _, val := range students {
-					if val == name {
-						isStud = true
-					}
+				fmt.Println("Такого ученика не существует")
+			}
+		case 3:
+			journal.printStudents()
+			if len(journal.Students) == 0 {
+				continue
+			}
+			fmt.Print("Введите ID ученика: ")
+			var id int
+			fmt.Scan(&id)
+			if journal.findStudentIndex(id) == -1 {
+				fmt.Println("Такого ученика нет")
+				continue
+			}
+			for {
+				fmt.Print("Введите оценку (1–5): ")
+				var mark int
+				if _, err := fmt.Scan(&mark); err != nil {
+					fmt.Println("Неверный ввод")
+					continue
 				}
-				if isStud {
-					fmt.Println("Ученик уже существует")
-				} else {
-					lastKey := 0
-					keys := SortKeys(students)
-					for _, key := range keys {
-						lastKey = key
-					}
-					index := lastKey + 1
-					students[index] = name
-					fmt.Println("Ученик добавлен")
+				if mark < 1 || mark > 5 {
+					fmt.Println("Оценка должна быть от 1 до 5")
+					continue
+				}
+				journal.addMark(id, mark)
+				fmt.Println("Оценка добавлена")
+				fmt.Print("Добавить ещё? (1 — да, иное — нет): ")
+				var cont int
+				fmt.Scan(&cont)
+				if cont != 1 {
+					break
 				}
 			}
-			fmt.Println(students)
-		} else if check == 2 {
-			printStud(students)
-			if len(students) == 0 {
+		case 4:
+			if len(journal.Students) == 0 {
 				fmt.Println("Учеников нет")
-			} else {
-				index := -1
-				fmt.Print("Выберите ученика: ")
-				fmt.Scan(&index)
-				if index != -1 && students[index] != "" {
-					delete(students, index)
-					if journal[index] != nil {
-						delete(journal, index)
-					}
-					fmt.Println("Ученик удален")
-				} else {
-					fmt.Println("Такого ученика не существует")
-				}
+				continue
 			}
-		} else if check == 3 {
-			printStud(students)
-			if len(students) == 0 {
-				fmt.Println("Учеников нет")
-			} else {
-				fmt.Print("Введите номер ученика: ")
-				fmt.Scan(&check)
-				index := -1
-				for i, val := range students {
-					if val == students[check] {
-						index = i
-					}
-				}
-				if index != -1 {
-					marks = journal[index]
-					for {
-						fmt.Print("Введите оценку(1-5): ")
-						_, err := fmt.Scan(&mark)
-						if err != nil {
-							fmt.Println("Неверный тип данных, повторите", err)
-							continue
-						}
-						if mark < 1 || mark > 5 {
-							fmt.Println("Такой оценки нет")
-						} else {
-							marks = append(marks, mark)
-							fmt.Println("Оценка добавлена")
-							fmt.Println("Добавить еще одну оценку?(1 - Да/2 - Нет)")
-							fmt.Scan(&check)
-							if check < 1 || check > 2 {
-								fmt.Println("Такого действия не существует")
-							} else if check == 2 {
-								break
-							}
-						}
-					}
-					journal[index] = marks
-					marks = nil
-				} else {
-					fmt.Println("Такого ученика не существует")
-				}
-			}
-		} else if check == 4 {
-			if len(students) == 0 {
-				fmt.Println("Учеников нет")
-			} else {
-				fmt.Println(`
+			fmt.Println(`
 Выберите действие:
-1. Вывести средний балл
-2. Вывести средний балл выше 4
-3. Ввести средний балл ниже 4
-4. Вывести средний балл студента`)
-				fmt.Scan(&check)
-				if check < 1 || check > 4 {
-					fmt.Println("Такого действия не существует")
-				} else if check == 1 {
-					for _, val := range students {
-						if len(journal[findKeyByValue(students, val)]) == 0 {
-							fmt.Println("У ученика", val, "нет оценок")
-						} else {
-							aver := fmt.Sprintf("%.2f", averMark(students, journal, val))
-							fmt.Println(val, "-", aver)
-						}
+1. Средний балл всех
+2. Средний балл ≥ 4.00
+3. Средний балл ≤ 4.00
+4. Средний балл конкретного ученика`)
+			fmt.Scan(&subCheck)
+			switch subCheck {
+			case 1:
+				for _, s := range journal.Students {
+					if avg, ok := journal.averageMark(s.ID); ok {
+						fmt.Printf("%s — %.2f\n", s.Name, avg)
+					} else {
+						fmt.Printf("%s — нет оценок\n", s.Name)
 					}
-				} else if check == 2 {
-					for _, val := range students {
-						aver := fmt.Sprintf("%.2f", averMark(students, journal, val))
-						av := averMark(students, journal, val)
-						if av >= 4 {
-							fmt.Println(val, "-", aver)
-						}
-					}
-				} else if check == 3 {
-					for _, val := range students {
-						aver := fmt.Sprintf("%.2f", averMark(students, journal, val))
-						av := averMark(students, journal, val)
-						if av <= 4 {
-							fmt.Println(val, "-", aver)
-						}
-					}
-				} else if check == 4 {
-					printStud(students)
-					fmt.Print("Введите номер ученика: ")
-					fmt.Scan(&check)
-					index := -1
-					for i, val := range students {
-						if val == students[check] {
-							index = i
-						}
-					}
-					if index != -1 {
-						if len(journal[findKeyByValue(students, name)]) == 0 {
-							fmt.Println("У ученика", name, "нет оценок")
-						} else {
-							aver := fmt.Sprintf("%.2f", averMark(students, journal, name))
-							fmt.Println(name, "-", aver)
-						}
-					}
-				} else {
-					fmt.Println("Такого ученика не существует")
 				}
+			case 2, 3:
+				for _, s := range journal.Students {
+					if avg, ok := journal.averageMark(s.ID); ok {
+						if (subCheck == 2 && avg >= 4.0) || (subCheck == 3 && avg <= 4.0) {
+							fmt.Printf("%s — %.2f\n", s.Name, avg)
+						}
+					}
+				}
+			case 4:
+				journal.printStudents()
+				fmt.Print("Введите ID ученика: ")
+				var id int
+				fmt.Scan(&id)
+				if avg, ok := journal.averageMark(id); ok {
+					name := journal.Students[journal.findStudentIndex(id)].Name
+					fmt.Printf("%s — %.2f\n", name, avg)
+				} else {
+					fmt.Println("Ученика не существует или у него нет оценок")
+				}
+			default:
+				fmt.Println("Неверный выбор")
 			}
-		} else if check == 5 {
-			SaveToFile(students, journal)
-		} else if check == 6 {
-			students, journal, err = LoadFromFile()
+		case 5:
+			journal.SaveToFile(filename)
+			fmt.Println("Сохранено в", filename)
+		case 6:
+			loaded, err := LoadFromFile(filename)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Println("Ошибка загрузки:", err)
+			} else {
+				journal = *loaded
+				fmt.Println("Загружено из", filename)
 			}
-		} else if check == 7 {
+		case 7:
 			fmt.Println("До свидания!")
-			break
-		} else if check == 9 {
-			printStud(students)
-			fmt.Println(journal)
+			return
+		default:
+			fmt.Println("Такого действия не существует")
 		}
 	}
 }
